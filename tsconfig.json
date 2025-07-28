@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "ESNext",
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "lib": ["esnext", "dom", "webworker"],
+    "skipLibCheck": true,
+
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "strict": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+  },
+  "exclude": ["node_modules", "dist"]
+}
