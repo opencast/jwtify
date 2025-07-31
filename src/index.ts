@@ -109,6 +109,7 @@ type InstallEventExt = ExtendableEvent & {
  */
 export const setUpServiceWorker = (configIn: Config) => {
     const ctx = new Context(configIn);
+    ctx.log("Setting up service worker with full config: ", ctx.config);
 
     // Make sure a downloaded service worker is immediately activated and starts
     // controlling all clients (pages).
