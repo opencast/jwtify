@@ -232,7 +232,7 @@ class Context {
         this.trustedOcOrigins = new Set(this.config.trustedOcOrigins);
         this.log = this.config.debugLog
             // eslint-disable-next-line no-console
-            ? (s: string, ...rest: unknown[]) => console.debug("[TODO] " + s, ...rest)
+            ? (s: string, ...rest: unknown[]) => console.debug("[jwtify] " + s, ...rest)
             : (..._: unknown[]) => {};
     }
 
