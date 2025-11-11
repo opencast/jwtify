@@ -187,14 +187,13 @@ const onFetch = (event: FetchEvent, ctx: Context) => {
         // If we get a JWT for the event, we inject it into the request.
         let req = event.request;
         if (jwt) {
+            const headers = new Headers(event.request.headers);
+            headers.set("Authorization", `Bearer ${jwt}`);
             req = new Request(event.request, {
+                headers,
                 // We have to use CORS as we set the `Authorization` header for
                 // cross origin requests.
                 ...ctx.config.cors && { mode: "cors" },
-                headers: {
-                    ...event.request.headers,
-                    "Authorization": `Bearer ${jwt}`,
-                },
             });
         } else {
             ctx.log("No JWT for request for", req.url);
