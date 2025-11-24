@@ -279,7 +279,15 @@ class Context {
 
     private async getJwtsCallback(eventIds: Set<EventId>): Promise<Map<EventId, Jwt>> {
         try {
-            return await this.config.getJwts(eventIds);
+          const out = await this.config.getJwts(eventIds);
+          if (!eventIds.isSubsetOf(out)) {
+            console.warn(
+              "'getJwts' callback returned fewer JWTs than requested (requested, response)",
+              eventIds,
+              [...out.keys()],
+            );
+          }
+          return out;
         } catch (e) {
             // eslint-disable-next-line no-console
             console.error("'getJwts' callback errored!", e);
