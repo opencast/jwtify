@@ -1,6 +1,6 @@
 {
   "name": "@opencast/jwtify",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Authenticate Opencast static file requests with JWT via service workers",
   "repository": "github:opencast/jwtify",
   "author": "The Opencast project",
