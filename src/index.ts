@@ -323,7 +323,13 @@ class Cache {
     }
 
     public add(eventId: EventId, token: Jwt) {
-        const exp = expOfJwt(token);
+        let exp;
+        try {
+          exp = expOfJwt(token);
+        } catch (e) {
+          console.warn("failed to get 'exp' from JWT, not adding to cache", e);
+          return;
+        }
         const entry = this.tokens.get(eventId);
         if (entry) {
             if (entry.exp < exp) {
@@ -363,9 +369,15 @@ class Cache {
 
 /** Extracts the `exp` claim from a JWT, throwing an error if it's not valid. */
 const expOfJwt = (jwt: Jwt): Timestamp => {
-    // `btoa` uses a different alphabet than JWT, so we need to adjust it.
-    const base64 = jwt.split(".")[1].replaceAll("-", "+").replaceAll("_", "/");
+    const parts = jwt.split(".");
+    if (parts.length != 3) {
+      throw new Error("JWT not valid");
+    }
 
+    // `btoa` uses a different alphabet than JWT, so we need to adjust it.
+    const base64 = parts[1].replaceAll("-", "+").replaceAll("_", "/");
+
+    // In the future, replace by `Uint8Array.fromBase64`
     const binString = atob(base64);
     const bytes = Uint8Array.from(binString, m => m.codePointAt(0)!);
     const utf8Json = new TextDecoder().decode(bytes);
