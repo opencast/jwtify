@@ -100,6 +100,12 @@ type InstallEventExt = ExtendableEvent & {
     }>) => void;
 };
 
+type Handle = {
+    cache: {
+        /** Adds a JWT to the cache, same as if it was returned from `getJwts()` */
+        add: (eventId: EventId, token: Jwt) => void;
+    };
+};
 
 /**
  * Sets up the service worker to intercept & authenticate OC requests. Usually,
@@ -107,7 +113,7 @@ type InstallEventExt = ExtendableEvent & {
  * `activate` and `fetch` event handlers. If you need more manual control over
  * those handlers, use `onFetch`.
  */
-export const setUpServiceWorker = (configIn: Config) => {
+export const setUpServiceWorker = (configIn: Config): Handle => {
     const ctx = new Context(configIn);
     ctx.log("Setting up service worker with full config: ", ctx.config);
 
@@ -154,6 +160,14 @@ export const setUpServiceWorker = (configIn: Config) => {
     });
 
     self.addEventListener("fetch", e => onFetch(e, ctx));
+
+    return {
+        cache: {
+            add: (eventId: EventId, token: Jwt) => {
+                ctx.cache.add(eventId, token);
+            },
+        },
+    };
 };
 
 
