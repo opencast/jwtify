@@ -444,8 +444,12 @@ class Cache {
     }
 }
 
-/** Extracts the `exp` claim from a JWT, throwing an error if it's not valid. */
-const expOfJwt = (jwt: Jwt): Timestamp => {
+
+/**
+ * Extracts the `exp` claim from a JWT, throwing an error if the JWT is
+ * malformed or has no valid `exp` claim. Note: the signature is NOT verified!
+ */
+export const expOfJwt = (jwt: Jwt): Timestamp => {
     const parts = jwt.split(".");
     if (parts.length != 3) {
       throw new Error("JWT not valid");
