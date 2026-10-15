@@ -527,7 +527,7 @@ class Context {
             return out;
         } catch (e) {
             // eslint-disable-next-line no-console
-            console.error("'getJwts' callback errored!", e);
+            console.error("[jwtify] 'getJwts' callback errored!", e);
             return new Map();
         }
     }
@@ -564,7 +564,8 @@ class Cache {
         try {
           exp = expOfJwt(token);
         } catch (e) {
-          console.warn("failed to get 'exp' from JWT, not adding to cache", e);
+          // eslint-disable-next-line no-console
+          console.warn("[jwtify] Failed to get 'exp' from JWT, not adding to cache", e);
           return;
         }
         const entry = this.tokens.get(eventId);
