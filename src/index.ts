@@ -117,7 +117,8 @@ type InstallEventExt = ExtendableEvent & {
     }>) => void;
 };
 
-type Handle = {
+/** Returned by `setUpServiceWorker`. */
+export type Handle = {
     cache: {
         /** Adds a JWT to the cache, same as if it was returned from `getJwts()` */
         add: (eventId: EventId, token: Jwt) => void;
