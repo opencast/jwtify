@@ -8,6 +8,20 @@ export type EventId = string;
 export type Timestamp = number;
 /** A full JWT */
 export type Jwt = string;
+/** ID of a service worker client (usually a page), see `FetchEvent.clientId`. */
+export type ClientId = string;
+
+/** Additional information passed to the `getJwts` callback. */
+export type GetJwtsInfo = {
+    /**
+     * ID of the client (usually a page) whose requests need these JWTs.
+     * Batching is done per client, so all requested events belong to this
+     * client. Can be passed to `self.clients.get()`. Is `""` for requests
+     * without a client, e.g. navigation requests (static file opened directly
+     * in a tab).
+     */
+    clientId: ClientId;
+};
 
 /** Configuration. See `DEFAULT_CONFIG` for default values! */
 export type Config = {
@@ -37,13 +51,15 @@ export type Config = {
      * JWTs. That route would need to perform authorization, usually by checking
      * the session cookie.
      *
-     * Argument is a list of Opencast IDs (of events). Must return a `Map` that
-     * maps from Opencast event IDs to JWTs. Usually the map contains one entry
-     * per entry in `eventIds`, but if access to an event should not be granted,
-     * don't include a JWT for that event. The function takes multiple event IDs
-     * to allow batching (to reduce number of API requests).
+     * First argument is a list of Opencast IDs (of events). Must return a `Map`
+     * that maps from Opencast event IDs to JWTs. Usually the map contains one
+     * entry per entry in `eventIds`, but if access to an event should not be
+     * granted, don't include a JWT for that event. The function takes multiple
+     * event IDs to allow batching (to reduce number of API requests).
+     *
+     * The second argument holds additional information, see `GetJwtsInfo`.
      */
-    getJwts: (eventsIds: Set<EventId>) => Promise<Map<EventId, Jwt>>;
+    getJwts: (eventsIds: Set<EventId>, info: GetJwtsInfo) => Promise<Map<EventId, Jwt>>;
 
     /**
      * Minimum time (in seconds) that JWTs still have to be valid for in order
@@ -58,8 +74,9 @@ export type Config = {
      * Number of milliseconds to wait for other requests in order to batch
      * multiple "get JWT for event" operations. Defaults to a small number, just
      * big enough to batch requests that occur basically at the same time (e.g.
-     * on page load or scrolling multiple loading="lazy" images into view). Set
-     * to 0 to disable batching.
+     * on page load or scrolling multiple loading="lazy" images into view). Only
+     * requests from the same client are batched together. Set to 0 to disable
+     * batching.
      */
     batchWindow?: Milliseconds;
 
@@ -192,7 +209,7 @@ const onFetch = (event: FetchEvent, ctx: Context) => {
             ctx.log("using cached JWT for", parsed.eventId);
             jwt = cachedJwt;
         } else {
-            jwt = await ctx.getJwt(parsed.eventId);
+            jwt = await ctx.getJwt(parsed.eventId, event.clientId);
             if (jwt) {
                 ctx.cache.add(parsed.eventId, jwt);
             }
@@ -222,10 +239,11 @@ class Context {
     public trustedOcOrigins: Set<string>;
     public log: (s: string, ...rest: unknown[]) => void;
     public cache: Cache;
-    public batch: null | {
+    /** Currently open batches, at most one per client. */
+    public batches: Map<ClientId, {
         task: Promise<Map<EventId, Jwt>>;
         eventIds: Set<EventId>;
-    } = null;
+    }> = new Map();
 
     public constructor(configIn: Config) {
         this.config = { ...DEFAULT_CONFIG, ...configIn };
@@ -249,38 +267,43 @@ class Context {
             : (..._: unknown[]) => {};
     }
 
-    /** Gets a JWT for the event, potentially batching multiple requests. */
-    public async getJwt(eventId: EventId): Promise<Jwt | null> {
+    /**
+     * Gets a JWT for the event, potentially batching multiple requests of the
+     * same client.
+     */
+    public async getJwt(eventId: EventId, clientId: ClientId): Promise<Jwt | null> {
+        const info = { clientId };
         let jwts;
         if (this.config.batchWindow <= 0) {
             // If batching is disabled, just immediately fetch.
-            this.log("batching disabled, immediately fetching JWT for", eventId);
-            jwts = await this.getJwtsCallback(new Set([eventId]));
+            this.log(`batching disabled, immediately fetching JWT (client '${clientId}') for`, eventId);
+            jwts = await this.getJwtsCallback(new Set([eventId]), info);
         } else {
-            let batch = this.batch;
+            let batch = this.batches.get(clientId);
             if (batch) {
-                this.log("adding to batch:", eventId);
+                this.log(`adding to batch (client '${clientId}'):`, eventId);
                 batch.eventIds.add(eventId);
             } else {
-                this.log("starting new batch with", eventId);
+                this.log(`starting new batch (client '${clientId}') with`, eventId);
                 const eventIds = new Set([eventId]);
-                batch = this.batch = {
+                batch = {
                     eventIds,
                     // The promise is simply a sleep for `batchWindow` and then
                     // a fetch.
                     task: new Promise(resolve => {
                         setTimeout(() => {
-                            this.log(`fetching batch with ${eventIds.size} events`);
-                            // Reset the batch right before we're starting the
+                            this.log(`fetching batch (client '${clientId}') with ${eventIds.size} events`);
+                            // Remove the batch right before we're starting the
                             // fetch so that a new batch can be started. Otherwise,
                             // event IDs added to the batch would be ignored.
-                            this.batch = null;
-                            this.getJwtsCallback(eventIds).then(jwts => {
+                            this.batches.delete(clientId);
+                            this.getJwtsCallback(eventIds, info).then(jwts => {
                                 resolve(jwts);
                             });
                         }, this.config.batchWindow);
                     }),
                 };
+                this.batches.set(clientId, batch);
             }
 
             // Awaiting batch task. Meaning all concurrent executions waiting on
@@ -291,9 +314,12 @@ class Context {
         return jwts.get(eventId) ?? null;
     }
 
-    private async getJwtsCallback(eventIds: Set<EventId>): Promise<Map<EventId, Jwt>> {
+    private async getJwtsCallback(
+        eventIds: Set<EventId>,
+        info: GetJwtsInfo,
+    ): Promise<Map<EventId, Jwt>> {
         try {
-          const out = await this.config.getJwts(eventIds);
+          const out = await this.config.getJwts(eventIds, info);
           if (!eventIds.isSubsetOf(out)) {
             console.warn(
               "'getJwts' callback returned fewer JWTs than requested (requested, response)",
