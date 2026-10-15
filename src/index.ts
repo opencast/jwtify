@@ -562,11 +562,11 @@ class Cache {
     public add(eventId: EventId, token: Jwt) {
         let exp;
         try {
-          exp = expOfJwt(token);
+            exp = expOfJwt(token);
         } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn("[jwtify] Failed to get 'exp' from JWT, not adding to cache", e);
-          return;
+            // eslint-disable-next-line no-console
+            console.warn("[jwtify] Failed to get 'exp' from JWT, not adding to cache", e);
+            return;
         }
         const entry = this.tokens.get(eventId);
         if (entry) {
@@ -623,7 +623,7 @@ const isExpFresh = (exp: Timestamp, minTimeLeft: Seconds): boolean => (
 export const expOfJwt = (jwt: Jwt): Timestamp => {
     const parts = jwt.split(".");
     if (parts.length != 3) {
-      throw new Error("JWT not valid");
+        throw new Error("JWT not valid");
     }
 
     // `btoa` uses a different alphabet than JWT, so we need to adjust it.
