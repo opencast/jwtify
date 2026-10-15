@@ -411,6 +411,18 @@ class Context {
         this.config = { ...DEFAULT_CONFIG, ...configIn };
 
         // Check config
+        const isOrigin = (s: string) => {
+            try {
+                return new URL(s).origin === s;
+            } catch {
+                return false;
+            }
+        };
+        const invalidOrigin = this.config.trustedOcOrigins.find(o => !isOrigin(o));
+        if (invalidOrigin !== undefined) {
+            throw new Error(`config error: '${invalidOrigin}' in trustedOcOrigins is not an `
+                + "origin (e.g. 'https://oc.example.com', without path or trailing slash)");
+        }
         if (this.config.pathPrefixes.some(p => !p.startsWith("/") || !p.endsWith("/"))) {
             throw new Error("config error: pathPrefixes must start and end with '/'");
         }
