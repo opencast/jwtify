@@ -117,6 +117,13 @@ type InstallEventExt = ExtendableEvent & {
     }>) => void;
 };
 
+/**
+ * Type of the message a page sends to the active service worker if the page is
+ * not controlled by it, e.g. after a hard reload (which bypasses the service
+ * worker). The service worker then clears its JWT cache and claims all clients.
+ */
+const RESET_AND_CLAIM = "jwtify:reset-and-claim";
+
 /** Returned by `setUpServiceWorker`. */
 export type Handle = {
     cache: {
@@ -128,7 +135,7 @@ export type Handle = {
 /**
  * Sets up the service worker to intercept & authenticate OC requests. Usually,
  * you only have to call this in your service worker. Adds the `install`,
- * `activate` and `fetch` event handlers.
+ * `activate`, `fetch` and `message` event handlers.
  */
 export const setUpServiceWorker = (configIn: Config): Handle => {
     const ctx = new Context(configIn);
@@ -177,6 +184,17 @@ export const setUpServiceWorker = (configIn: Config): Handle => {
     });
 
     self.addEventListener("fetch", e => onFetch(e, ctx));
+
+    // Sent by `setUpClient` if the page is not controlled by us although we are
+    // active. That's usually due to a hard reload, which we treat as "start
+    // fresh", so we also clear the cache.
+    self.addEventListener("message", e => {
+        if (e.data?.type === RESET_AND_CLAIM) {
+            ctx.log("on 'message': clearing cache and claiming clients");
+            ctx.cache.clear();
+            e.waitUntil(self.clients.claim());
+        }
+    });
 
     return {
         cache: {
@@ -247,6 +265,14 @@ export const setUpClient = async (
     }
 
     if (enabled) {
+        // Whether the page is controlled by our SW. We need to check the path, to
+        // ignore controllers for a larger scope.
+        const scriptPath = new URL(scriptUrl, document.baseURI).pathname;
+        const isControlled = () => {
+            const controller = navigator.serviceWorker.controller;
+            return !!controller && new URL(controller.scriptURL).pathname === scriptPath;
+        };
+
         // Listen before registering to not miss the event.
         const controllerChanged = new Promise<void>(resolve => {
             navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
@@ -256,7 +282,17 @@ export const setUpClient = async (
         const registeredAndControlled = navigator.serviceWorker
             .register(scriptUrl, { scope, updateViaCache: "none" })
             .then(
-                () => controllerChanged.then(() => "controlled" as const),
+                registration => {
+                    // If our SW is already active, but does not control this
+                    // page, this is usually due to a hard reload. In that case,
+                    // the SW would never take control on its own. On the first
+                    // visit, there is no active SW yet, and it claims this page
+                    // when it gets activated.
+                    if (!isControlled() && registration.active) {
+                        registration.active.postMessage({ type: RESET_AND_CLAIM });
+                    }
+                    return controllerChanged.then(() => "controlled" as const);
+                },
                 e => {
                     // eslint-disable-next-line no-console
                     console.error("[jwtify] Failed to register service worker", e);
@@ -265,20 +301,16 @@ export const setUpClient = async (
             );
 
         // Check whether the page is already controlled, for example when this is
-        // not the first visit. But we need to check the path, to ignore controllers
-        // for a larger scope.
-        const scriptPath = new URL(scriptUrl, document.baseURI).pathname;
-        const controller = navigator.serviceWorker.controller;
-        if (controller && new URL(controller.scriptURL).pathname === scriptPath) {
+        // not the first visit.
+        if (isControlled()) {
             return "controlled";
         }
 
         // Wait for SW to control this page (with timeout).
         //
-        // On the first visit, the SW claims this page right after it got activated.
         // We can't use `navigator.serviceWorker.ready` here: it only waits for an
         // active SW, which does not mean that this page is controlled (e.g. after
-        // a hard reload, it never is). And it never rejects.
+        // a hard reload, it isn't). And it never rejects.
         const result = await Promise.race([
             registeredAndControlled,
             new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), timeout)),
@@ -545,6 +577,10 @@ class Cache {
             this.tokens.set(eventId, { exp, token });
         }
         this.planPurge();
+    }
+
+    public clear() {
+        this.tokens.clear();
     }
 
     private planPurge() {
