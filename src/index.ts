@@ -128,8 +128,7 @@ export type Handle = {
 /**
  * Sets up the service worker to intercept & authenticate OC requests. Usually,
  * you only have to call this in your service worker. Adds the `install`,
- * `activate` and `fetch` event handlers. If you need more manual control over
- * those handlers, use `onFetch`.
+ * `activate` and `fetch` event handlers.
  */
 export const setUpServiceWorker = (configIn: Config): Handle => {
     const ctx = new Context(configIn);
