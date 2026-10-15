@@ -480,7 +480,7 @@ const parsePath = (path: string, config: FullConfig): ParsedPath | null => {
         return null;
     }
 
-    const withoutPrefix = path.slice(prefix.length + 1);
+    const withoutPrefix = path.slice(prefix.length);
     const parts = withoutPrefix.split("/");
     if (parts.length < 4) {
         return null;
