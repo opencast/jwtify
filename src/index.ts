@@ -529,11 +529,12 @@ class Context {
     ): Promise<Map<EventId, Jwt>> {
         try {
             const out = await this.config.getJwts(eventIds, info);
-            if (!eventIds.isSubsetOf(out)) {
+            const missing = [...eventIds].filter(id => !out.has(id));
+            if (missing.length > 0) {
                 // Not a problem, as that's how `getJwts` denies access.
                 this.log(
                     `'getJwts' returned no JWT for some events (client '${info.clientId}'):`,
-                    [...eventIds].filter(id => !out.has(id)),
+                    missing,
                 );
             }
             return out;
@@ -599,7 +600,7 @@ class Cache {
     private planPurge() {
         if (!this.purgePlanned) {
             this.purgePlanned = true;
-            const nextExp = Math.min(...this.tokens.values().map(entry => entry.exp));
+            const nextExp = Math.min(...[...this.tokens.values()].map(entry => entry.exp));
             const msTillStale = 1000 * (nextExp - Date.now() / 1000 - this.cacheMinTokenTimeLeft);
             // Add 500ms as buffer and protect against 32bit overflow.
             const delay = Math.min(msTillStale + 500, 2 ** 31 - 1);

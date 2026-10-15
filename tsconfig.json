@@ -4,7 +4,7 @@
     "module": "ESNext",
     "esModuleInterop": true,
     "moduleResolution": "node",
-    "lib": ["esnext", "dom", "webworker"],
+    "lib": ["es2023", "dom", "webworker"],
     "skipLibCheck": true,
 
     "declaration": true,
