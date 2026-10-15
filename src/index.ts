@@ -210,9 +210,6 @@ const onFetch = (event: FetchEvent, ctx: Context) => {
             jwt = cachedJwt;
         } else {
             jwt = await ctx.getJwt(parsed.eventId, event.clientId);
-            if (jwt) {
-                ctx.cache.add(parsed.eventId, jwt);
-            }
         }
 
         // If we get a JWT for the event, we inject it into the request.
@@ -244,6 +241,11 @@ class Context {
         task: Promise<Map<EventId, Jwt>>;
         eventIds: Set<EventId>;
     }> = new Map();
+    /**
+     * Lookups currently in progress, per client and event. Keyed by client as
+     * well, as different clients might answer differently.
+     */
+    public pending: Map<ClientId, Map<EventId, Promise<Jwt | null>>> = new Map();
 
     public constructor(configIn: Config) {
         this.config = { ...DEFAULT_CONFIG, ...configIn };
@@ -268,10 +270,45 @@ class Context {
     }
 
     /**
+     * Gets a JWT for the event and adds it to the cache. If a lookup for the
+     * same client and event is already in progress, waits for that one instead
+     * of starting another.
+     */
+    public getJwt(eventId: EventId, clientId: ClientId): Promise<Jwt | null> {
+        const pendingOfClient = this.pending.get(clientId)
+            ?? new Map<EventId, Promise<Jwt | null>>();
+        const existing = pendingOfClient.get(eventId);
+        if (existing) {
+            this.log(`waiting for pending lookup (client '${clientId}') for`, eventId);
+            return existing;
+        }
+
+        const lookup = (async () => {
+            try {
+                const jwt = await this.getJwtBatched(eventId, clientId);
+                if (jwt) {
+                    this.cache.add(eventId, jwt);
+                }
+                return jwt;
+            } finally {
+                // This runs after the `set` calls below, as there is at least
+                // one `await` before.
+                pendingOfClient.delete(eventId);
+                if (pendingOfClient.size === 0) {
+                    this.pending.delete(clientId);
+                }
+            }
+        })();
+        pendingOfClient.set(eventId, lookup);
+        this.pending.set(clientId, pendingOfClient);
+        return lookup;
+    }
+
+    /**
      * Gets a JWT for the event, potentially batching multiple requests of the
      * same client.
      */
-    public async getJwt(eventId: EventId, clientId: ClientId): Promise<Jwt | null> {
+    private async getJwtBatched(eventId: EventId, clientId: ClientId): Promise<Jwt | null> {
         const info = { clientId };
         let jwts;
         if (this.config.batchWindow <= 0) {
