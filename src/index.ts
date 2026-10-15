@@ -588,13 +588,15 @@ class Cache {
             this.purgePlanned = true;
             const nextExp = Math.min(...this.tokens.values().map(entry => entry.exp));
             const msTillStale = 1000 * (nextExp - Date.now() / 1000 - this.cacheMinTokenTimeLeft);
+            // Add 500ms as buffer and protect against 32bit overflow.
+            const delay = Math.min(msTillStale + 500, 2 ** 31 - 1);
             setTimeout(() => {
                 this.purgeStaleEntries();
                 this.purgePlanned = false;
                 if (this.tokens.size > 0) {
                     this.planPurge();
                 }
-            }, msTillStale + 500); // Just add 500ms as buffer
+            }, delay);
         }
     }
 
