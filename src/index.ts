@@ -188,6 +188,134 @@ export const setUpServiceWorker = (configIn: Config): Handle => {
 };
 
 
+/** Options for `setUpClient`. */
+export type SetUpClientOptions = {
+    /** If `false`, the service worker is unregistered instead. Default: `true`. */
+    enabled?: boolean;
+
+    /**
+     * Scope of the service worker, passed to `register()`. Default: the
+     * directory of the service worker script.
+     */
+    scope?: string;
+
+    /** Maximum time to wait for the page to be controlled. Default: 3000. */
+    timeout?: Milliseconds;
+};
+
+/**
+ * Result of `setUpClient`:
+ * - `"controlled"`: the page is controlled by the service worker.
+ * - `"disabled"`: `enabled` was `false`, the service worker got unregistered
+ *   (if it was registered before).
+ * - `"timeout"`: the page did not get controlled within the timeout.
+ * - `"failed"`: registering or unregistering threw an error (which is logged).
+ * - `"unsupported"`: the browser has no service worker API, e.g. because the
+ *   page is not served via HTTPS.
+ */
+export type SetUpClientResult = "controlled" | "timeout" | "failed" | "unsupported" | "disabled";
+
+/**
+ * Sets up the page side: registers the service worker at `scriptUrl` and
+ * waits until it controls this page. Call this on every page load, as early
+ * as possible. Requests made before the page is controlled bypass the service
+ * worker and thus won't have a JWT attached. So you likely want to wait for
+ * the returned promise before loading static files. If the page is already
+ * controlled, the promise resolves immediately.
+ *
+ * If `enabled` is `false`, the service worker is unregistered instead, so that
+ * it does not linger after the feature has been disabled. This is meant for a
+ * global config switch: all pages in the scope have to agree on it, otherwise
+ * they keep unregistering each other's service worker. Note that pages that are
+ * already controlled stay so until they are closed or navigate away.
+ *
+ * Never rejects, errors are logged instead.
+ */
+export const setUpClient = async (
+    scriptUrl: string,
+    options: SetUpClientOptions = {},
+): Promise<SetUpClientResult> => {
+    const { enabled = true, scope, timeout = 3000 } = options;
+
+    if (!("serviceWorker" in navigator)) {
+        if (enabled) {
+            // eslint-disable-next-line no-console
+            console.warn("[jwtify] Service workers not supported: "
+                + "requests for static files won't have JWTs attached");
+        }
+        return "unsupported";
+    }
+
+    if (enabled) {
+        // Listen before registering to not miss the event.
+        const controllerChanged = new Promise<void>(resolve => {
+            navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+        });
+
+        // Register SW, even if the page is already controlled to apply changed script URLs.
+        const registeredAndControlled = navigator.serviceWorker
+            .register(scriptUrl, { scope, updateViaCache: "none" })
+            .then(
+                () => controllerChanged.then(() => "controlled" as const),
+                e => {
+                    // eslint-disable-next-line no-console
+                    console.error("[jwtify] Failed to register service worker", e);
+                    return "failed" as const;
+                },
+            );
+
+        // Check whether the page is already controlled, for example when this is
+        // not the first visit. But we need to check the path, to ignore controllers
+        // for a larger scope.
+        const scriptPath = new URL(scriptUrl, document.baseURI).pathname;
+        const controller = navigator.serviceWorker.controller;
+        if (controller && new URL(controller.scriptURL).pathname === scriptPath) {
+            return "controlled";
+        }
+
+        // Wait for SW to control this page (with timeout).
+        //
+        // On the first visit, the SW claims this page right after it got activated.
+        // We can't use `navigator.serviceWorker.ready` here: it only waits for an
+        // active SW, which does not mean that this page is controlled (e.g. after
+        // a hard reload, it never is). And it never rejects.
+        const result = await Promise.race([
+            registeredAndControlled,
+            new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), timeout)),
+        ]);
+
+        if (result === "timeout") {
+            // eslint-disable-next-line no-console
+            console.warn(`[jwtify] Page not controlled by service worker after ${timeout}ms: `
+                + "requests for static files won't have JWTs attached");
+        }
+        return result;
+    } else {
+        // Like `register()`, resolve a given scope relative to the page, and
+        // default to the script's directory.
+        const scopeUrl = scope === undefined
+            ? new URL("./", new URL(scriptUrl, document.baseURI))
+            : new URL(scope, document.baseURI);
+
+        try {
+            // `getRegistration` returns the registration whose scope is the
+            // longest prefix of the given URL. If ours does not exist, that
+            // could be an unrelated service worker with a wider scope, so we
+            // check that the scope matches exactly.
+            const registration = await navigator.serviceWorker.getRegistration(scopeUrl.href);
+            if (registration?.scope === scopeUrl.href) {
+                await registration.unregister();
+            }
+            return "disabled";
+        } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error("[jwtify] Failed to unregister service worker", e);
+            return "failed";
+        }
+    }
+};
+
+
 const onFetch = (event: FetchEvent, ctx: Context) => {
     ctx.log("on 'fetch' for ", event.request.method, event.request.url);
     const url = new URL(event.request.url);
