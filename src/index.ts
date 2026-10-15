@@ -392,7 +392,7 @@ class Cache {
         if (!entry) {
             return null;
         }
-        if (entry.exp < Date.now() / 1000 + this.cacheMinTokenTimeLeft) {
+        if (!isExpFresh(entry.exp, this.cacheMinTokenTimeLeft)) {
             this.tokens.delete(eventId);
             return null;
         }
@@ -435,15 +435,19 @@ class Cache {
     }
 
     private purgeStaleEntries() {
-        const minExp = Date.now() / 1000 + this.cacheMinTokenTimeLeft;
         for (const [key, entry] of this.tokens.entries()) {
-            if (entry.exp < minExp) {
+            if (!isExpFresh(entry.exp, this.cacheMinTokenTimeLeft)) {
                 this.tokens.delete(key);
             }
         }
     }
 }
 
+
+/** Whether `exp` is at least `minTimeLeft` seconds in the future. */
+const isExpFresh = (exp: Timestamp, minTimeLeft: Seconds): boolean => (
+    exp >= Date.now() / 1000 + minTimeLeft
+);
 
 /**
  * Extracts the `exp` claim from a JWT, throwing an error if the JWT is
