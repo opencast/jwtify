@@ -356,15 +356,15 @@ class Context {
         info: GetJwtsInfo,
     ): Promise<Map<EventId, Jwt>> {
         try {
-          const out = await this.config.getJwts(eventIds, info);
-          if (!eventIds.isSubsetOf(out)) {
-            console.warn(
-              "'getJwts' callback returned fewer JWTs than requested (requested, response)",
-              eventIds,
-              [...out.keys()],
-            );
-          }
-          return out;
+            const out = await this.config.getJwts(eventIds, info);
+            if (!eventIds.isSubsetOf(out)) {
+                // Not a problem, as that's how `getJwts` denies access.
+                this.log(
+                    `'getJwts' returned no JWT for some events (client '${info.clientId}'):`,
+                    [...eventIds].filter(id => !out.has(id)),
+                );
+            }
+            return out;
         } catch (e) {
             // eslint-disable-next-line no-console
             console.error("'getJwts' callback errored!", e);
