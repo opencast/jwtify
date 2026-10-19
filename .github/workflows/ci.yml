@@ -10,9 +10,9 @@ on:
 
 jobs:
   main:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - run: npm install
     - name: Build & Typecheck
       run: npm run build
